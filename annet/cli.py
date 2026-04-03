@@ -20,7 +20,8 @@ from annet.api import Deployer, collapse_texts
 from annet.argparse import ArgParser, subcommand
 from annet.deploy import get_deployer, get_fetcher
 from annet.diff import gen_sort_diff
-from annet.gen import Loader, old_raw
+from annet.gen import Loader, format_config_blocks, old_new
+from annet import patching
 from annet.lib import get_context_path, repair_context_file
 from annet.output import OutputDriver, output_driver_connector
 from annet.storage import Device, get_storage
@@ -41,32 +42,6 @@ def list_subcommands():
     return globals().copy()
 
 
-def _gen_current_items(
-    config,
-    stdin,
-    loader: Loader,
-    output_driver: OutputDriver,
-    gen_args: cli_args.GenOptions,
-) -> Iterable[Tuple[str, str, bool]]:
-    for device, result in old_raw(
-        args=gen_args,
-        loader=loader,
-        config=config,
-        stdin=stdin,
-        do_files_download=True,
-        use_mesh=False,
-    ):
-        if device.hw.vendor != "pc":
-            destname = output_driver.cfg_file_names(device)[0]
-            yield (destname, result, False)
-        else:
-            for entire_path, entire_data in sorted(result.items(), key=operator.itemgetter(0)):
-                if entire_data is None:
-                    entire_data = ""
-                destname = output_driver.entire_config_dest_path(device, entire_path)
-                yield (destname, entire_data, False)
-
-
 @contextmanager
 def get_loader(gen_args: cli_args.GenOptions, args: cli_args.QueryOptionsBase):
     exit_stack = ExitStack()
@@ -84,23 +59,41 @@ def show():
     pass
 
 
-@subcommand(cli_args.QueryOptions, cli_args.opt_config, cli_args.FileOutOptions, parent=show)
-def show_current(args: cli_args.QueryOptions, config, arg_out: cli_args.FileOutOptions) -> None:
-    """Show current devices' configuration"""
-    gen_args = cli_args.GenOptions(args, no_acl=True)
+@subcommand(cli_args.ShowCurrentOptions, parent=show)
+def show_current(args: cli_args.ShowCurrentOptions) -> None:
+    """Show current devices' configuration, optionally filtered by generator ACL (-g) and interfaces (-i)"""
+    args.no_acl = not (args.acl or args.allowed_gens or args.filter_ifaces)
+    filterer = filtering.filterer_connector.get()
     output_driver = output_driver_connector.get()
-    with get_loader(gen_args, args) as loader:
+    with get_loader(args, args) as loader:
         if not loader.devices:
             get_logger().error("No devices found for %s", args.query)
 
-        items = _gen_current_items(
-            loader=loader,
-            output_driver=output_driver,
-            gen_args=gen_args,
-            stdin=args.stdin(config=config),
-            config=config,
-        )
-        output_driver.write_output(arg_out, items, len(loader.devices))
+        def items() -> Iterable[Tuple[str, str, bool]]:
+            for res in old_new(
+                args,
+                config=args.config,
+                loader=loader,
+                filterer=filterer,
+                no_new=True,
+                add_implicit=False,
+                do_files_download=True,
+            ):
+                if res.err:
+                    raise res.err
+                device = res.device
+                if not device.is_pc():
+                    if res.old:
+                        orderer = patching.Orderer.from_hw(device.hw)
+                        old_text = format_config_blocks(orderer.order_config(res.old), device.hw, args.indent)
+                        yield output_driver.cfg_file_names(device)[0], old_text, False
+                else:
+                    for entire_path, entire_data in sorted(res.old_files.items()):
+                        if entire_data is None:
+                            entire_data = ""
+                        yield output_driver.entire_config_dest_path(device, entire_path), entire_data, False
+
+        output_driver.write_output(args, items(), len(loader.devices))
 
 
 @subcommand(cli_args.QueryOptions, cli_args.FileOutOptions, parent=show)

@@ -23,13 +23,10 @@ from typing import (
 )
 
 import tabulate
-from contextlog import get_logger
-
 from annet import generators, implicit, patching, rulebook, tracing
-from annet.annlib import jsontools
 from annet.annlib.rbparser.acl import compile_acl_text
-from annet.cli_args import DeployOptions, GenOptions, ShowGenOptions
-from annet.deploy import get_fetcher, scrub_config
+from annet.cli_args import GenOptions, ShowGenOptions
+from annet.deploy import get_fetcher
 from annet.filtering import Filterer
 from annet.generators import (
     BaseGenerator,
@@ -46,7 +43,7 @@ from annet.storage import Device, Storage
 from annet.tracing import tracing_connector
 from annet.types import OldNewResult
 from annet.vendors import registry_connector, tabparser
-
+from contextlog import get_logger
 
 # Вывод всех генераторов вместе.
 # Значение такое же, как для аналогичной константы в ЧК.
@@ -423,51 +420,6 @@ def old_new(
             raise GeneratorError from err
         if result is not None:
             yield result
-
-
-@tracing.function
-def old_raw(
-    args: GenOptions,
-    loader: Loader,
-    config,
-    stdin=None,
-    do_files_download=False,
-    use_mesh=True,
-) -> Iterable[Tuple[Device, Union[str, Dict[str, str]]]]:
-    device_gens = loader.resolve_gens(loader.devices)
-    running, failed_running = _old_resolve_running(config, loader.devices)
-    downloaded_files, failed_files = _old_resolve_files(config, loader.devices, device_gens, do_files_download)
-    if stdin is None:
-        stdin = args.stdin(filter_acl=args.filter_acl, config=config)
-    ctx = OldNewDeviceContext(
-        config=config,
-        args=args,
-        downloaded_files=split_downloaded_files_multi_device(downloaded_files, device_gens, loader.devices),
-        failed_files=failed_files,
-        running=running,
-        failed_running=failed_running,
-        stdin=stdin,
-        do_files_download=do_files_download,
-        device_count=len(loader.devices),
-        no_new=True,
-        add_annotations=False,
-        add_implicit=False,
-        gens=DeviceGenerators(),
-        fetched_packages={},
-        failed_packages={},
-        do_print_perf=True,
-    )
-    for device in loader.devices:
-        if not device.is_pc():
-            config = _old_new_get_config_cli(ctx, device)
-            config = scrub_config(config, device.breed)
-            yield device, config
-        else:
-            files = _old_new_get_config_files(ctx, device)
-            if files.entire_files:
-                yield device, files.entire_files
-            if files.json_fragment_files:
-                yield device, {path: jsontools.format_json(data) for path, data in files.json_fragment_files.items()}
 
 
 @tracing.function
