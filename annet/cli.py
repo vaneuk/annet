@@ -15,13 +15,12 @@ import yaml
 from contextlog import get_logger
 from valkit.python import valid_logging_level
 
-from annet import api, cli_args, filtering, generators
+from annet import api, cli_args, filtering, generators, patching
 from annet.api import Deployer, collapse_texts
 from annet.argparse import ArgParser, subcommand
 from annet.deploy import get_deployer, get_fetcher
 from annet.diff import gen_sort_diff
 from annet.gen import Loader, format_config_blocks, old_new
-from annet import patching
 from annet.lib import get_context_path, repair_context_file
 from annet.output import OutputDriver, output_driver_connector
 from annet.storage import Device, get_storage

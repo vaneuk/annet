@@ -23,6 +23,8 @@ from typing import (
 )
 
 import tabulate
+from contextlog import get_logger
+
 from annet import generators, implicit, patching, rulebook, tracing
 from annet.annlib.rbparser.acl import compile_acl_text
 from annet.cli_args import GenOptions, ShowGenOptions
@@ -43,7 +45,7 @@ from annet.storage import Device, Storage
 from annet.tracing import tracing_connector
 from annet.types import OldNewResult
 from annet.vendors import registry_connector, tabparser
-from contextlog import get_logger
+
 
 # Вывод всех генераторов вместе.
 # Значение такое же, как для аналогичной константы в ЧК.
